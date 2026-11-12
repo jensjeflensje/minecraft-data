@@ -1,4 +1,4 @@
-!version: 26.2
+!version: 26.3
 !StartDocs: true
 
 ^types:
@@ -21,6 +21,7 @@
    UUID: native
    option: native
    entityMetadataLoop: native
+   entityDelta: native
    topBitSetTerminatedArray: native
    bitfield: native
    bitflags: native
@@ -106,12 +107,14 @@
       - blocks_attacks
       - piercing_weapon
       - kinetic_weapon
-      - swing_animation
+      - attack_animation
+      - interact_animation
       - additional_trade_cost
+      - block_transformer
+      - villager_food
       - stored_enchantments
       - dye
       - dyed_color
-      - map_color
       - map_id
       - map_decorations
       - map_post_processing
@@ -148,6 +151,10 @@
       - lock
       - container_loot
       - break_sound
+      - compostable
+      - cooking_fuel
+      - brewing_fuel
+      - mob_visibility
       - villager/variant
       - wolf/variant
       - wolf/sound_variant
@@ -177,6 +184,11 @@
       - cat/collar
       - sheep/color
       - shulker/color
+      - provides_pottery_pattern
+      - sign_text_front
+      - sign_text_back
+      - waxed
+      - cushion/color
 
    # Instead of sending NBT for items over the network, Minecraft since 1.20.5 sends a
    # list of components that make up the item. This saves bandwidth by not encoding tag names.
@@ -209,7 +221,7 @@
          - uncommon
          - rare
          - epic
-         if enchantments or stored_enchantments:
+         if enchantments:
             enchantments: []varint
                id: varint
                level: varint
@@ -254,22 +266,7 @@
          if creative_slot_lock: void
          if enchantment_glint_override: bool
          if intangible_projectile: anonymousNbt
-         if blocks_attacks:
-            blockDelaySeconds: f32
-            disableCooldownScale: f32
-            damageReductions: []varint
-               horizontalBlockingAngle: f32
-               type?: IDSet
-               base: f32
-               factor: f32
-            itemDamage:
-               threshold: f32
-               base: f32
-               factor: f32
-            bypassedBy?: string
-            blockSound?: ItemSoundHolder
-            disableSound?: ItemSoundHolder
-         if food: 
+         if food:
             nutrition: varint
             # How much saturation will be given after consuming the item.
             saturationModifier: f32
@@ -346,6 +343,21 @@
          if tooltip_style: string
          if death_protection:
             effects: ItemConsumeEffect[]varint
+         if blocks_attacks:
+            blockDelaySeconds: f32
+            disableCooldownScale: f32
+            damageReductions: []varint
+               horizontalBlockingAngle: f32
+               type?: IDSet
+               base: f32
+               factor: f32
+            itemDamage:
+               threshold: f32
+               base: f32
+               factor: f32
+            bypassedBy?: string
+            blockSound?: ItemSoundHolder
+            disableSound?: ItemSoundHolder
          if piercing_weapon:
             dealsKnockback: bool
             dismounts: bool
@@ -361,20 +373,40 @@
             damageMultiplier: f32
             sound?: ItemSoundHolder
             hitSound?: ItemSoundHolder
-         if swing_animation:
+         if attack_animation:
+            type: varint =>
+               - none
+               - whack
+               - stab
+            duration: varint
+         if interact_animation:
             type: varint =>
                - none
                - whack
                - stab
             duration: varint
          if additional_trade_cost: varint
+         if villager_food:
+            value: varint
+         if block_transformer: varint
+         if compostable:
+            layers: ContextProviderHolder
+         if cooking_fuel:
+            burnTime: ContextProviderHolder
+            speedMultiplier: ContextProviderHolder
+         if brewing_fuel:
+            uses: ContextProviderHolder
+            speedMultiplier: ContextProviderHolder
+         if provides_pottery_pattern: varint
+         if stored_enchantments:
+            enchantments: []varint
+               id: varint
+               level: varint
          if dye: DyeColor
          if dyed_color: i32
-         if map_color: i32
          if map_id: varint
          if map_decorations: anonymousNbt
          if map_post_processing: varint
-         if potion_duration_scale: f32
          if charged_projectiles:
             projectiles: ItemStackTemplate[]varint
          if bundle_contents:
@@ -386,6 +418,7 @@
             customColor?: i32
             customEffects: ItemPotionEffect[]varint
             customName?: string
+         if potion_duration_scale: f32
          if suspicious_stew_effects:
             effects: []varint
                # The ID of the effect in the potion effect type registry.
@@ -406,10 +439,13 @@
             material: ["registryEntryHolder", { "baseName": "materialId", "otherwise": { "name": "data", "type": "ArmorTrimMaterial" } }]
             pattern: ["registryEntryHolder", { "baseName": "patternId", "otherwise": { "name": "data", "type": "ArmorTrimPattern" } }]
          if debug_stick_state: anonymousNbt
-         if entity_data or block_entity_data:
+         if entity_data:
             type: varint
             data: anonymousNbt
          if bucket_entity_data: anonymousNbt
+         if block_entity_data:
+            type: varint
+            data: anonymousNbt
          if instrument:
             hasHolder: bool
             data: hasHolder ?
@@ -443,8 +479,10 @@
             layers: BannerPatternLayer[]varint
          if base_color: DyeColor
          if pot_decorations:
-            # The ID of the items in the item registry.
-            decorations: varint[]varint
+            back?: ItemStackTemplate
+            left?: ItemStackTemplate
+            right?: ItemStackTemplate
+            front?: ItemStackTemplate
          if container:
             contents: ["array", { "countType": "varint", "type": ["option", "ItemStackTemplate"] }]
          if block_state:
@@ -461,6 +499,9 @@
          if lock: anonymousNbt
          if container_loot: anonymousNbt
          if break_sound: ItemSoundHolder
+         if mob_visibility:
+            entities: IDSet
+            multiplier: f32
          if villager/variant: varint
          if wolf/variant: varint
          if wolf/sound_variant: varint
@@ -490,13 +531,31 @@
          if cat/collar: DyeColor
          if sheep/color: DyeColor
          if shulker/color: DyeColor
- 
+         if sign_text_front:
+            messages: ["array", { "count": 4, "type": "anonymousNbt" }]
+            filteredMessages: ["array", { "count": 4, "type": "anonymousNbt" }]
+            color: varint
+            hasGlowingText: bool
+         if sign_text_back:
+            messages: ["array", { "count": 4, "type": "anonymousNbt" }]
+            filteredMessages: ["array", { "count": 4, "type": "anonymousNbt" }]
+            color: varint
+            hasGlowingText: bool
+         if waxed: void
+         if cushion/color: varint
+
    ItemSoundEvent:
       soundName: string
       fixedRange?: f32
    ItemSoundHolder: ["registryEntryHolder", {
       "baseName": "soundId",
       "otherwise": { name: "data", type: "ItemSoundEvent" }
+   }]
+   # 26.3 context_int_provider / context_float_provider references (e.g. minecraft:cooking/time_boats):
+   # a registry holder whose "inline" (id 0) form is the provider's resource key. Seen on the wire from a vanilla 26.3 server.
+   ContextProviderHolder: ["registryEntryHolder", {
+      "baseName": "id",
+      "otherwise": { name: "key", type: "string" }
    }]
 
    ItemFireworkExplosion:
@@ -534,8 +593,8 @@
          if true:
             exactValue: string
          if false:
-            minValue: string
-            maxValue: string
+            minValue?: string
+            maxValue?: string
 
    ExactComponentMatcher: SlotComponent[]varint
 
@@ -956,6 +1015,9 @@
          - infested
          - cherry_leaves
          - pale_oak_leaves
+         - red_poplar_leaves
+         - orange_poplar_leaves
+         - yellow_poplar_leaves
          - tinted_leaves
          - sculk_soul
          - sculk_charge
@@ -1028,8 +1090,8 @@
          - shriek
          - egg_crack
          - dust_plume
-         - trial_spawner_detected_player
-         - trial_spawner_detected_player_ominous
+         - trial_spawner_detection
+         - trial_spawner_detection_ominous
          - vault_connection
          - dust_pillar
          - ominous_spawning
@@ -1054,6 +1116,10 @@
       ## If you want to see all the serializers try regexp searching "StreamCodec.*Particle"
       data: type ?
          if block or block_marker or falling_dust or dust_pillar or block_crumble: varint
+         if geyser: i32
+         if geyser_base or geyser_poof or geyser_plume:
+            waterBlocks: i32
+            burstImpulseBase: f32
          if dust:
             color: i32
             scale: f32
@@ -1087,11 +1153,6 @@
             color: i32
             power: f32
          if flash: i32
-         if geyser or geyser_plume:
-            waterBlocks: i32
-         if geyser_base or geyser_poof:
-            waterBlocks: i32
-            burstImpulseBase: f32
    ingredient: Slot[]varint
    position: [
       "bitfield",
@@ -1154,7 +1215,7 @@
       - block_pos
       - optional_block_pos
       - direction
-      - optional_uuid
+      - optional_living_entity_reference
       - block_state
       - optional_block_state
       - particle
@@ -1184,6 +1245,7 @@
       - quaternion
       - resolvable_profile
       - humanoid_arm
+      - dye_color
       value: type ?
          if byte: i8
          if int: varint
@@ -1201,7 +1263,7 @@
          if block_pos: position
          if optional_block_pos: ["option", "position"]
          if direction: varint
-         if optional_uuid: ["option", "UUID"]
+         if optional_living_entity_reference: ["option", "UUID"]
          if block_state: varint
          if optional_block_state: optvarint
          if particle: Particle
@@ -1239,6 +1301,7 @@
          if humanoid_arm: varint =>
             - left
             - right
+         if dye_color: varint
    EntityMetadataPaintingVariant:
       width: i32
       height: i32
@@ -1421,7 +1484,12 @@
             - minecraft:loot_table # 1.20.5
             - minecraft:loot_predicate # 1.20.5
             - minecraft:loot_modifier # 1.20.5
+            - minecraft:context_float_provider # 26.3
+            - minecraft:context_int_provider # 26.3
+            - minecraft:slot_source # 26.3
             - minecraft:dialog # 1.21.6
+            - minecraft:feature # 26.3
+            - minecraft:swing_animation # 26.3
             - minecraft:uuid
             properties: parser ?
                if brigadier:bool: void
@@ -1613,6 +1681,11 @@
                if minecraft:heightmap: void
                if minecraft:dialog: void
                if minecraft:uuid: void
+               if minecraft:context_float_provider: void
+               if minecraft:context_int_provider: void
+               if minecraft:slot_source: void
+               if minecraft:feature: void
+               if minecraft:swing_animation: void
             suggestionType: ../flags/has_custom_suggestions ?
                if 1: string
                default: void
@@ -1886,6 +1959,9 @@
    # MC: ClientboundShowDialogConfigurationPacket
    packet_show_dialog:
       dialog: anonymousNbt
+   # MC: ClientboundApplyPostEffectsPacket
+   packet_post_effects:
+      postEffects: string[]varint
    packet:
       name: varint =>
          - cookie_request
@@ -1898,6 +1974,7 @@
          - registry_data
          - remove_resource_pack
          - add_resource_pack
+         - post_effects
          - store_cookie
          - transfer
          - feature_flags
@@ -1919,6 +1996,7 @@
          if registry_data: packet_registry_data
          if remove_resource_pack: packet_common_remove_resource_pack
          if add_resource_pack: packet_common_add_resource_pack
+         if post_effects: packet_post_effects
          if store_cookie: packet_common_store_cookie
          if transfer: packet_common_transfer
          if feature_flags: packet_feature_flags
@@ -1998,7 +2076,7 @@
             component: SlotComponentType
          if item: varint
          if item_stack: ItemStackTemplate
-         if tag: string
+         if tag: IDSet
          if dyed_slot_demo:
             dye: SlotDisplay
             target: SlotDisplay
@@ -2269,12 +2347,20 @@
    # MC: ClientboundEntityPositionSyncPacket
    packet_sync_entity_position:
       entityId: varint
-      x: f64
-      y: f64
-      z: f64
-      dx: f64
-      dy: f64
-      dz: f64
+      positionType: varint =>
+         - linear
+         - stepped
+      _: positionType ?
+         if linear:
+            x: f64
+            y: f64
+            z: f64
+         if stepped:
+            steps: []varint
+               x: f64
+               y: f64
+               z: f64
+               tickOffset: varint
       yaw: f32
       pitch: f32
       onGround: bool
@@ -2294,6 +2380,10 @@
       explosionParticle: Particle
       sound: ItemSoundHolder
       blockParticles: ExplosionParticleEntry[]varint
+      playSound: bool
+   packet_add_transient_block:
+      location: position
+      type: varint
    # MC: ClientboundForgetLevelChunkPacket
    packet_unload_chunk:
       chunkZ: i32
@@ -2360,10 +2450,10 @@
          data: i64[]varint
       chunkData: ByteArray
       blockEntities: chunkBlockEntity[]varint
-      skyLightMask: i64[]varint
-      blockLightMask: i64[]varint
-      emptySkyLightMask: i64[]varint
-      emptyBlockLightMask: i64[]varint
+      skyLightMask: ByteArray
+      blockLightMask: ByteArray
+      emptySkyLightMask: ByteArray
+      emptyBlockLightMask: ByteArray
       skyLight: []varint
          _: u8[]varint
       blockLight: []varint
@@ -2376,6 +2466,7 @@
       global: bool
    # MC: ClientboundLevelParticlesPacket
    packet_world_particles:
+      particle: Particle
       longDistance: bool
       alwaysShow: bool
       x: f64
@@ -2384,17 +2475,22 @@
       offsetX: f32
       offsetY: f32
       offsetZ: f32
-      velocityOffset: f32
-      amount: i32
-      particle: Particle
+      xMaxSpeed: f32
+      yMaxSpeed: f32
+      zMaxSpeed: f32
+      amount: varint
+      randomizationType: varint =>
+         - default
+         - alternative
+         - alternative_with_speed
    # MC: ClientboundLightUpdatePacket
    packet_update_light:
       chunkX: varint
       chunkZ: varint
-      skyLightMask: i64[]varint
-      blockLightMask: i64[]varint
-      emptySkyLightMask: i64[]varint
-      emptyBlockLightMask: i64[]varint
+      skyLightMask: ByteArray
+      blockLightMask: ByteArray
+      emptySkyLightMask: ByteArray
+      emptyBlockLightMask: ByteArray
       skyLight: []varint
          _: u8[]varint
       blockLight: []varint
@@ -2473,19 +2569,13 @@
    # MC: ClientboundMoveEntityPacket.Pos
    packet_rel_entity_move:
       entityId: varint
-      dX: i16
-      dY: i16
-      dZ: i16
-      onGround: bool
+      move: entityDelta
    # MC: ClientboundMoveEntityPacket.PosRot
    packet_entity_move_look:
       entityId: varint
-      dX: i16
-      dY: i16
-      dZ: i16
+      move: entityDelta
       yaw: i8
       pitch: i8
-      onGround: bool
    # MC: ClientboundMoveMinecartPacket
    packet_move_minecart: # 1.21.3
       entityId: varint
@@ -2707,6 +2797,8 @@
       entity_name: string
       objective_name?: string
    ## (remove_resource_pack is common)
+   packet_post_effects:
+      postEffects: string[]varint
    # MC: ClientboundRespawnPacket
    packet_respawn:
       worldState: SpawnInfo
@@ -2868,6 +2960,7 @@
          - leave
       _: mode ?
          if add or change:
+            # 26.2+: reordered, and the color (formatting) became optional (absent = reset); same as the 26.2 file
             name: anonymousNbt
             prefix: anonymousNbt
             suffix: anonymousNbt
@@ -2882,9 +2975,9 @@
                - push_other_teams
                - push_own_team
             formatting?: varint
-            flags: ["bitflags", { 
-               "type": "u8", 
-               "flags": ["friendly_fire", "see_friendly_invisible"] 
+            flags: ["bitflags", {
+               "type": "u8",
+               "flags": ["friendly_fire", "see_friendly_invisible"]
             }]
          default: void
       players: mode ?
@@ -2956,6 +3049,11 @@
          if 3: string
          default: void
    ## (Store Cookie is Common)
+   packet_swing_animation:
+      entityId: varint
+      hand: varint
+      animationType: varint
+      duration: varint
    # MC: ClientboundSystemChatPacket
    packet_system_chat:
       content: anonymousNbt
@@ -3019,11 +3117,11 @@
                backgroundTexture: flags/has_background_texture ?
                   if 1: string
                   default: void
-               xCord: f32
-               yCord: f32
             requirements: []varint
                _: string[]varint
             sendsTelemtryData: bool
+         x: f32
+         y: f32
       identifiers: string[]varint
       progressMapping: []varint
          key: string
@@ -3036,16 +3134,13 @@
       entityId: varint
       properties: []varint
          key: varint =>
-            - air_drag_modifier
             - generic.armor
             - generic.armor_toughness
             - generic.attack_damage
             - generic.attack_knockback
             - generic.attack_speed
-            - below_name_distance
             - player.block_break_speed
             - player.block_interaction_range
-            - bounciness
             - burning_time
             - camera_distance
             - explosion_knockback_resistance
@@ -3053,21 +3148,15 @@
             - generic.fall_damage_multiplier
             - generic.flying_speed
             - generic.follow_range
-            - friction_modifier
             - generic.gravity
             - generic.jump_strength
             - generic.knockback_resistance
             - generic.luck
             - generic.max_absorption
             - generic.max_health
-            - mining_efficiency
-            - movement_efficiency
             - generic.movement_speed
-            - name_tag_distance
-            - oxygen_bonus
             - generic.safe_fall_distance
             - generic.scale
-            - sneaking_speed
             - zombie.spawn_reinforcements
             - generic.step_height
             - submerged_mining_speed
@@ -3188,6 +3277,7 @@
       - entity_status
       - sync_entity_position
       - explosion
+      - add_transient_block
       - unload_chunk
       - game_state_change
       - game_rule_values
@@ -3233,6 +3323,7 @@
       - reset_score
       - remove_resource_pack
       - add_resource_pack
+      - post_effects
       - respawn
       - entity_head_rotation
       - multi_block_change
@@ -3272,6 +3363,7 @@
       - start_configuration
       - stop_sound
       - store_cookie
+      - swing_animation
       - system_chat
       - playerlist_header
       - nbt_query_response
@@ -3330,6 +3422,7 @@
          if entity_status: packet_entity_status
          if sync_entity_position: packet_sync_entity_position
          if explosion: packet_explosion
+         if add_transient_block: packet_add_transient_block
          if unload_chunk: packet_unload_chunk
          if game_state_change: packet_game_state_change
          if game_rule_values: packet_game_rule_values
@@ -3375,6 +3468,7 @@
          if reset_score: packet_reset_score
          if remove_resource_pack: packet_common_remove_resource_pack
          if add_resource_pack: packet_common_add_resource_pack
+         if post_effects: packet_post_effects
          if respawn: packet_respawn
          if entity_head_rotation: packet_entity_head_rotation
          if multi_block_change: packet_multi_block_change
@@ -3414,6 +3508,7 @@
          if start_configuration: packet_start_configuration
          if stop_sound: packet_stop_sound
          if store_cookie: packet_common_store_cookie
+         if swing_animation: packet_swing_animation
          if system_chat: packet_system_chat
          if playerlist_header: packet_playerlist_header
          if nbt_query_response: packet_nbt_query_response
@@ -3438,9 +3533,15 @@
    # MC: ServerboundAcceptTeleportationPacket
    packet_teleport_confirm:
       teleportId: varint
+      x: f64
+      y: f64
+      z: f64
+      yRot: f32
+      xRot: f32
    # MC: ServerboundAttackPacket
    packet_attack:
       entityId: varint
+   packet_punch: void
    # MC: ServerboundBlockEntityTagQueryPacket
    packet_query_block_nbt:
       transactionId: varint
@@ -3773,20 +3874,16 @@
    # MC: ServerboundSignUpdatePacket
    packet_update_sign:
       location: position
-      isFrontText: bool
       text1: string
       text2: string
       text3: string
       text4: string
+      # 26.3 moved isFrontText after the lines (the vanilla server stores a leading bool as line 1 and reads the
+      # last line's length as the side)
+      isFrontText: bool
    # MC: ServerboundSpectatorActionPacket
-   # entityId uses vanilla's OPTIONAL_VAR_INT sentinel encoding: raw varint, 0 = absent, n = entity id (n - 1).
    packet_spectator_action:
-      entityId: optvarint
-   # MC: ServerboundSwingPacket
-   packet_arm_animation:
-      hand: varint =>
-         - main_hand
-         - off_hand
+      entityId?: varint
    # MC: ServerboundTeleportToEntityPacket
    packet_spectate:
       target: UUID
@@ -3871,6 +3968,7 @@
       - player_input
       - player_loaded
       - pong
+      - punch
       - recipe_book
       - displayed_recipe
       - name_item
@@ -3888,7 +3986,6 @@
       - set_test_block
       - update_sign
       - spectator_action
-      - arm_animation
       - spectate
       - test_instance_block_action
       - block_place
@@ -3941,6 +4038,7 @@
          if player_input: packet_player_input
          if player_loaded: packet_player_loaded
          if pong: packet_pong
+         if punch: packet_punch
          if recipe_book: packet_recipe_book
          if displayed_recipe: packet_displayed_recipe
          if name_item: packet_name_item
@@ -3958,7 +4056,6 @@
          if set_test_block: packet_set_test_block
          if update_sign: packet_update_sign
          if spectator_action: packet_spectator_action
-         if arm_animation: packet_arm_animation
          if spectate: packet_spectate
          if test_instance_block_action: packet_test_instance_block_action
          if block_place: packet_block_place
