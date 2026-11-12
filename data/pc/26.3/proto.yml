@@ -3882,8 +3882,9 @@
       # last line's length as the side)
       isFrontText: bool
    # MC: ServerboundSpectatorActionPacket
+   # OPTIONAL_VAR_INT: 0 is empty, otherwise the entity id + 1 (a bool prefix gets the client kicked)
    packet_spectator_action:
-      entityId?: varint
+      entityId: optvarint
    # MC: ServerboundTeleportToEntityPacket
    packet_spectate:
       target: UUID

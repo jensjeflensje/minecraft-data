@@ -11976,10 +11976,7 @@
           [
             {
               "name": "entityId",
-              "type": [
-                "option",
-                "varint"
-              ]
+              "type": "optvarint"
             }
           ]
         ],
